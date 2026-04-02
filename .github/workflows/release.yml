@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── 1. Tests ──────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun tsc --noEmit
+
+      - name: Run tests
+        run: bun test
+
+  # ── 2. Build cross-platform binaries ──────────────────────────────────────
+  # Each binary is built on its native runner because @opentui/core loads
+  # platform-specific native modules — cross-compilation is not supported.
+  build:
+    name: Build (${{ matrix.artifact }})
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: bun-linux-x64
+            artifact: env-diff-linux-x64
+          - runner: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            artifact: env-diff-linux-arm64
+          # macOS builds temporarily disabled
+          # - runner: macos-13
+          #   target: bun-darwin-x64
+          #   artifact: env-diff-darwin-x64
+          # - runner: macos-latest
+          #   target: bun-darwin-arm64
+          #   artifact: env-diff-darwin-arm64
+          - runner: windows-latest
+            target: bun-windows-x64
+            artifact: env-diff-windows-x64.exe
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create dist dir (Unix)
+        if: runner.os != 'Windows'
+        run: mkdir -p dist
+
+      - name: Create dist dir (Windows)
+        if: runner.os == 'Windows'
+        run: New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+      # Single-line command works on both bash (Linux) and PowerShell (Windows)
+      - name: Build binary
+        run: bun build src/index.tsx --compile --minify --sourcemap --target=${{ matrix.target }} --outfile=dist/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  # ── 3. Create GitHub release ───────────────────────────────────────────────
+  release:
+    name: Release ${{ github.ref_name }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)" "${TAG}")
+          else
+            COMMITS=$(git log --pretty=format:"- %s (%h)" "${PREV_TAG}..${TAG}")
+          fi
+
+          {
+            echo "body<<EOF"
+            echo "## What's changed"
+            echo ""
+            echo "${COMMITS}"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full diff:** [\`${PREV_TAG}..${TAG}\`](../../compare/${PREV_TAG}...${TAG})"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: List built artifacts
+        run: ls -lh dist/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.body }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/env-diff-linux-x64
+            dist/env-diff-linux-arm64
+            dist/env-diff-windows-x64.exe

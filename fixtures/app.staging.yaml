@@ -1,0 +1,33 @@
+runtime: python311
+service: default
+instance_class: F2
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 5
+  target_cpu_utilization: 0.65
+  target_throughput_utilization: 0.65
+
+env_variables:
+  APP_ENV: staging
+  DEBUG: "false"
+  PORT: "8080"
+  DATABASE_URL: "postgres://stg_user:stg_pass@/stg_db?host=/cloudsql/project:region:instance"
+  DATABASE_POOL_MAX: "10"
+  REDIS_HOST: "10.0.0.1"
+  REDIS_PORT: "6379"
+  GCS_BUCKET: "myapp-staging"
+  GCS_REGION: "us-central1"
+  SECRET_KEY: "staging-secret-abc123"
+  ALLOWED_HOSTS: "staging.example.com"
+  LOG_LEVEL: "info"
+  FEATURE_DARK_MODE: "true"
+  FEATURE_BETA_API: "true"
+
+vpc_access_connector:
+  name: projects/my-project/locations/us-central1/connectors/my-connector
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always

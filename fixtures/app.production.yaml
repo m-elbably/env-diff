@@ -1,0 +1,37 @@
+runtime: python311
+service: default
+instance_class: F4_1G
+
+automatic_scaling:
+  min_instances: 1
+  max_instances: 20
+  target_cpu_utilization: 0.60
+  target_throughput_utilization: 0.60
+
+env_variables:
+  APP_ENV: production
+  DEBUG: "false"
+  PORT: "8080"
+  DATABASE_URL: "postgres://prod_user:prod_pass@/prod_db?host=/cloudsql/project:region:prod-instance"
+  DATABASE_POOL_MAX: "50"
+  DATABASE_SSL: "true"
+  REDIS_HOST: "10.0.1.1"
+  REDIS_PORT: "6379"
+  REDIS_TLS: "true"
+  GCS_BUCKET: "myapp-production"
+  GCS_REGION: "us-central1"
+  SECRET_KEY: "prod-secret-xyz789-ultra-secure"
+  ALLOWED_HOSTS: "api.example.com,example.com"
+  LOG_LEVEL: "warn"
+  SENTRY_DSN: "https://key@sentry.io/project"
+  FEATURE_DARK_MODE: "true"
+  FEATURE_BETA_API: "false"
+  FEATURE_MAINTENANCE_MODE: "false"
+
+vpc_access_connector:
+  name: projects/my-project/locations/us-central1/connectors/prod-connector
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always

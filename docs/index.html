@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>env-diff — Local TUI diff for .env, .yaml and .json files</title>
+  <meta name="description" content="A fully offline, local terminal UI to visually diff .env, .yaml, and .json config files side-by-side. Your secrets never leave your machine." />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="env-diff" />
+  <meta property="og:description" content="Offline TUI diff tool for .env, .yaml and .json files. Secrets stay local." />
+  <meta property="og:type" content="website" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg-panel:  #161b22;
+      --bg-card:   #1c2128;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --red:       #f85149;
+      --amber:     #d29922;
+      --blue:      #388bfd;
+      --blue-b:    #79c0ff;
+      --tag-bg:    #1f6feb22;
+      --tag-text:  #79c0ff;
+      --removed-bg:#2d0f0f;
+      --added-bg:  #0d2b1a;
+      --modified-bg:#241e00;
+      --unchanged-bg:#161b22;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ─────────────────────────────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    .nav-brand {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--blue-b);
+      text-decoration: none;
+      letter-spacing: -0.5px;
+    }
+
+    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color .15s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      padding: .45rem 1rem;
+      border-radius: 6px;
+      font-size: .875rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: opacity .15s, transform .1s;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover { opacity: .85; transform: translateY(-1px); }
+    .btn:active { transform: none; }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    /* ── Hero ────────────────────────────────────────────────────────── */
+    .hero {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 6rem 2rem 4rem;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      background: var(--tag-bg);
+      border: 1px solid var(--border);
+      color: var(--tag-text);
+      font-size: .78rem;
+      font-family: var(--font-mono);
+      padding: .3rem .8rem;
+      border-radius: 100px;
+      margin-bottom: 1.5rem;
+      letter-spacing: .5px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.8rem, 6vw, 4.5rem);
+      font-family: var(--font-mono);
+      font-weight: 800;
+      letter-spacing: -2px;
+      line-height: 1.1;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, var(--text) 30%, var(--blue-b));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--muted);
+      max-width: 580px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
+    }
+
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Terminal Preview ─────────────────────────────────────────────── */
+    .terminal-wrap {
+      max-width: 900px;
+      margin: 0 auto 5rem;
+      padding: 0 2rem;
+    }
+
+    .terminal {
+      background: #010409;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,.6);
+    }
+
+    .terminal-bar {
+      background: var(--bg-panel);
+      padding: .65rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+    }
+    .dot-red    { background: #ff5f57; }
+    .dot-yellow { background: #febc2e; }
+    .dot-green  { background: #28c840; }
+
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: .78rem;
+      color: var(--muted);
+    }
+
+    .terminal-body {
+      padding: 1.5rem;
+      font-family: var(--font-mono);
+      font-size: .82rem;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+
+    .t-prompt { color: #3fb950; }
+    .t-cmd    { color: var(--text); }
+    .t-dim    { color: var(--muted); }
+
+    /* Diff table preview */
+    .diff-preview { margin-top: 1rem; border-radius: 6px; overflow: hidden; }
+    .diff-row {
+      display: grid;
+      grid-template-columns: 24px 48px 30% 1fr 1fr;
+      gap: 0;
+      min-height: 22px;
+      align-items: center;
+      font-size: .8rem;
+    }
+    .diff-header {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: .75rem;
+    }
+    .diff-row.removed { background: var(--removed-bg); }
+    .diff-row.added   { background: var(--added-bg); }
+    .diff-row.modified { background: var(--modified-bg); }
+    .diff-row.unchanged { background: var(--unchanged-bg); }
+
+    .d-sym   { padding: 0 4px; text-align: center; }
+    .d-ln    { padding: 0 6px; color: var(--muted); font-size: .72rem; }
+    .d-key   { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .d-val   { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .sym-removed  { color: var(--red); }
+    .sym-added    { color: var(--green); }
+    .sym-modified { color: var(--amber); }
+    .sym-unchanged{ color: var(--muted); }
+
+    .val-removed  { color: var(--red); }
+    .val-added    { color: var(--green); }
+    .val-modified-a { color: var(--red); }
+    .val-modified-b { color: var(--green); }
+    .val-unchanged{ color: var(--muted); }
+
+    .char-removed { background: #5c1010; color: #ffaaaa; border-radius: 2px; padding: 0 1px; }
+    .char-added   { background: #0d3b1a; color: #a8ffb0; border-radius: 2px; padding: 0 1px; }
+
+    /* ── Features ────────────────────────────────────────────────────── */
+    .section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 4rem 2rem;
+    }
+
+    .section-label {
+      font-size: .78rem;
+      font-family: var(--font-mono);
+      color: var(--blue);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: .75rem;
+    }
+
+    .section h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: .75rem;
+      letter-spacing: -.5px;
+    }
+
+    .section-sub {
+      color: var(--muted);
+      font-size: 1.05rem;
+      margin-bottom: 3rem;
+      max-width: 560px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.4rem;
+      transition: border-color .2s, transform .2s;
+    }
+    .feature-card:hover {
+      border-color: var(--blue);
+      transform: translateY(-2px);
+    }
+
+    .feature-icon {
+      font-size: 1.5rem;
+      margin-bottom: .75rem;
+      display: block;
+    }
+
+    .feature-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: .4rem;
+    }
+
+    .feature-card p {
+      font-size: .875rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    /* ── Install ─────────────────────────────────────────────────────── */
+    .install-section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 4rem 2rem;
+    }
+
+    .code-block {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      font-family: var(--font-mono);
+      font-size: .875rem;
+      line-height: 1.8;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .code-block .comment { color: var(--muted); }
+    .code-block .cmd     { color: var(--text); }
+    .code-block .arg     { color: var(--blue-b); }
+    .code-block .out     { color: var(--green); }
+
+    /* ── Shortcuts ───────────────────────────────────────────────────── */
+    .shortcuts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: .75rem;
+    }
+
+    .shortcut-item {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+    }
+
+    kbd {
+      display: inline-block;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      padding: .2rem .55rem;
+      font-family: var(--font-mono);
+      font-size: .8rem;
+      color: var(--blue-b);
+      white-space: nowrap;
+      min-width: 38px;
+      text-align: center;
+    }
+
+    .shortcut-desc {
+      font-size: .875rem;
+      color: var(--muted);
+    }
+
+    /* ── Downloads ───────────────────────────────────────────────────── */
+    .downloads-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .download-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.4rem 1.25rem;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      transition: border-color .2s, transform .2s;
+    }
+    .download-card:hover {
+      border-color: var(--green);
+      transform: translateY(-2px);
+    }
+
+    .download-icon { font-size: 1.75rem; }
+    .download-platform { font-weight: 600; font-size: .95rem; }
+    .download-arch { font-size: .8rem; color: var(--muted); font-family: var(--font-mono); }
+
+    /* ── Footer ──────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: .875rem;
+    }
+
+    footer a { color: var(--blue-b); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0;
+    }
+
+    /* ── Responsive ──────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      nav { padding: 0 1rem; }
+      .nav-links { display: none; }
+      .hero, .section, .install-section { padding-left: 1rem; padding-right: 1rem; }
+      .terminal-wrap { padding: 0 1rem; }
+      .diff-row { grid-template-columns: 20px 40px 28% 1fr 1fr; font-size: .72rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ──────────────────────────────────────────────────────────────── -->
+<nav>
+  <a class="nav-brand" href="#">env-diff</a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#install">Install</a>
+    <a href="#shortcuts">Shortcuts</a>
+    <a href="#download">Download</a>
+    <a class="btn btn-ghost" href="https://github.com/m-elbably/env-diff" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-badge">100% offline · No cloud · No AI</div>
+  <h1>env-diff</h1>
+  <p>A local terminal UI to compare <code style="color:var(--blue-b);background:var(--tag-bg);padding:.1rem .4rem;border-radius:4px;font-size:.95em">.env</code>, <code style="color:var(--blue-b);background:var(--tag-bg);padding:.1rem .4rem;border-radius:4px;font-size:.95em">.yaml</code>, and <code style="color:var(--blue-b);background:var(--tag-bg);padding:.1rem .4rem;border-radius:4px;font-size:.95em">.json</code> config files side-by-side. Your secrets never leave your machine.</p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="#install">Get Started</a>
+    <a class="btn btn-ghost" href="https://github.com/m-elbably/env-diff/releases/latest" target="_blank" rel="noopener">Download Binary</a>
+    <a class="btn btn-ghost" href="https://github.com/m-elbably/env-diff" target="_blank" rel="noopener">View on GitHub</a>
+  </div>
+</section>
+
+<!-- ── Terminal Preview ───────────────────────────────────────────────────── -->
+<div class="terminal-wrap">
+  <div class="terminal">
+    <div class="terminal-bar">
+      <span class="dot dot-red"></span>
+      <span class="dot dot-yellow"></span>
+      <span class="dot dot-green"></span>
+      <span class="terminal-title">env-diff .env.staging .env.production</span>
+    </div>
+    <div class="terminal-body">
+      <div><span class="t-prompt">$</span> <span class="t-cmd">env-diff .env.staging .env.production</span></div>
+      <br>
+      <div class="diff-preview">
+        <!-- Header -->
+        <div class="diff-row diff-header">
+          <div class="d-sym"></div>
+          <div class="d-ln">&nbsp;#A&nbsp;&nbsp;#B</div>
+          <div class="d-key" style="padding-left:8px">KEY</div>
+          <div class="d-val" style="color:var(--red);font-weight:600">staging</div>
+          <div class="d-val" style="color:var(--green);font-weight:600">production</div>
+        </div>
+        <!-- removed -->
+        <div class="diff-row removed">
+          <div class="d-sym sym-removed">−</div>
+          <div class="d-ln">2&nbsp;&nbsp;&nbsp;─</div>
+          <div class="d-key sym-removed">GCS_BUCKET</div>
+          <div class="d-val val-removed">myapp-staging</div>
+          <div class="d-val" style="color:var(--muted)">──────</div>
+        </div>
+        <!-- added -->
+        <div class="diff-row added">
+          <div class="d-sym sym-added">+</div>
+          <div class="d-ln">─&nbsp;&nbsp;&nbsp;2</div>
+          <div class="d-key sym-added">GCS_BUCKET_PROD</div>
+          <div class="d-val" style="color:var(--muted)">──────</div>
+          <div class="d-val val-added">myapp-production</div>
+        </div>
+        <!-- modified with char diff -->
+        <div class="diff-row modified">
+          <div class="d-sym sym-modified">~</div>
+          <div class="d-ln">4&nbsp;&nbsp;&nbsp;4</div>
+          <div class="d-key sym-modified">DATABASE_URL</div>
+          <div class="d-val val-modified-a">postgres://user:pass@<span class="char-removed">localhost</span>:5432/myapp</div>
+          <div class="d-val val-modified-b">postgres://user:pass@<span class="char-added">db.prod.internal</span>:5432/myapp</div>
+        </div>
+        <!-- modified -->
+        <div class="diff-row modified">
+          <div class="d-sym sym-modified">~</div>
+          <div class="d-ln">7&nbsp;&nbsp;&nbsp;7</div>
+          <div class="d-key sym-modified">APP_ENV</div>
+          <div class="d-val val-modified-a"><span class="char-removed">staging</span></div>
+          <div class="d-val val-modified-b"><span class="char-added">production</span></div>
+        </div>
+        <!-- unchanged -->
+        <div class="diff-row unchanged">
+          <div class="d-sym sym-unchanged">·</div>
+          <div class="d-ln">9&nbsp;&nbsp;&nbsp;9</div>
+          <div class="d-key val-unchanged">PORT</div>
+          <div class="d-val val-unchanged">8080</div>
+          <div class="d-val val-unchanged">8080</div>
+        </div>
+        <!-- unchanged secret -->
+        <div class="diff-row unchanged">
+          <div class="d-sym sym-unchanged">·</div>
+          <div class="d-ln">12&nbsp;&nbsp;12</div>
+          <div class="d-key val-unchanged">SECRET_KEY</div>
+          <div class="d-val" style="color:var(--muted)">****</div>
+          <div class="d-val" style="color:var(--muted)">****</div>
+        </div>
+      </div>
+      <br>
+      <div class="t-dim">  3 modified · 1 added · 1 removed · 8 unchanged</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Features ──────────────────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section" id="features">
+  <div class="section-label">Features</div>
+  <h2>Everything in the terminal</h2>
+  <p class="section-sub">No browser, no cloud service, no copy-pasting secrets into a website.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <span class="feature-icon">🔒</span>
+      <h3>100% Offline</h3>
+      <p>Nothing ever leaves your machine. Built for engineers who handle real credentials.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🎨</span>
+      <h3>Char-level Diff</h3>
+      <p>Modified values highlight exactly which characters changed using an LCS algorithm.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔑</span>
+      <h3>Secret Masking</h3>
+      <p>Keys matching <code style="font-size:.8em;color:var(--blue-b)">*_KEY</code>, <code style="font-size:.8em;color:var(--blue-b)">*_SECRET</code>, <code style="font-size:.8em;color:var(--blue-b)">*_TOKEN</code> and more are masked with <code style="font-size:.8em;color:var(--muted)">****</code> by default.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📁</span>
+      <h3>Multi-format</h3>
+      <p>Supports <code style="font-size:.8em;color:var(--blue-b)">.env</code>, <code style="font-size:.8em;color:var(--blue-b)">.yaml</code>/<code style="font-size:.8em;color:var(--blue-b)">.yml</code>, and <code style="font-size:.8em;color:var(--blue-b)">.json</code> with full recursive key flattening.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔍</span>
+      <h3>Search & Filter</h3>
+      <p>Type to filter keys in real-time. Filter by status: added, removed, modified, unchanged.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">⚙️</span>
+      <h3>CI-friendly</h3>
+      <p>Exits with code <code style="font-size:.8em;color:var(--blue-b)">1</code> when differences exist. Use it in pipelines to detect config drift.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📋</span>
+      <h3>Copy to Clipboard</h3>
+      <p>Press <kbd style="font-size:.75em">c</kbd> or right-click to copy any value. Supports xclip, wl-copy, pbcopy, and OSC 52.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📦</span>
+      <h3>Single Binary</h3>
+      <p>Download a standalone executable. No runtime required, no <code style="font-size:.8em;color:var(--muted)">node_modules</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Install ────────────────────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="install-section" id="install">
+  <div class="section-label">Install</div>
+  <h2 style="font-size:2rem;font-weight:700;margin-bottom:.75rem;letter-spacing:-.5px">Get up and running</h2>
+  <p class="section-sub" style="margin-bottom:2rem">Requires <a href="https://bun.sh" target="_blank" rel="noopener" style="color:var(--blue-b);text-decoration:none">Bun</a>. Or just download a prebuilt binary.</p>
+
+  <p style="font-size:.875rem;color:var(--muted);margin-bottom:.5rem">From source</p>
+  <div class="code-block" style="margin-bottom:1.5rem">
+    <div><span class="comment"># Clone and install</span></div>
+    <div><span class="cmd">git clone https://github.com/m-elbably/env-diff</span></div>
+    <div><span class="cmd">cd env-diff &amp;&amp; bun install</span></div>
+    <br>
+    <div><span class="comment"># Run</span></div>
+    <div><span class="cmd">bun run src/index.tsx <span class="arg">.env.staging .env.production</span></span></div>
+  </div>
+
+  <p style="font-size:.875rem;color:var(--muted);margin-bottom:.5rem">With ignore pattern</p>
+  <div class="code-block" style="margin-bottom:1.5rem">
+    <div><span class="cmd">env-diff <span class="arg">.env.stg .env.prod</span> --ignore-pattern <span class="arg">"^CI_"</span></span></div>
+  </div>
+
+  <p style="font-size:.875rem;color:var(--muted);margin-bottom:.5rem">In a CI pipeline</p>
+  <div class="code-block">
+    <div><span class="comment"># Fail the build if dev and prod configs have drifted</span></div>
+    <div><span class="cmd">env-diff <span class="arg">.env.dev .env.prod</span> || <span class="out">echo "Config drift detected!"</span></span></div>
+  </div>
+</section>
+
+<!-- ── Shortcuts ──────────────────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section" id="shortcuts">
+  <div class="section-label">Keyboard</div>
+  <h2>Shortcuts</h2>
+  <p class="section-sub">No mouse required — full keyboard navigation.</p>
+
+  <div class="shortcuts-grid">
+    <div class="shortcut-item"><kbd>↑ ↓</kbd> <span class="shortcut-desc">Scroll / navigate cursor</span></div>
+    <div class="shortcut-item"><kbd>j k</kbd> <span class="shortcut-desc">Vim-style scrolling</span></div>
+    <div class="shortcut-item"><kbd>g G</kbd> <span class="shortcut-desc">Jump to top / bottom</span></div>
+    <div class="shortcut-item"><kbd>/</kbd> <span class="shortcut-desc">Search keys</span></div>
+    <div class="shortcut-item"><kbd>f</kbd> <span class="shortcut-desc">Cycle status filter</span></div>
+    <div class="shortcut-item"><kbd>d</kbd> <span class="shortcut-desc">Show diffs only</span></div>
+    <div class="shortcut-item"><kbd>a</kbd> <span class="shortcut-desc">Show all keys</span></div>
+    <div class="shortcut-item"><kbd>o</kbd> <span class="shortcut-desc">Cycle sort mode</span></div>
+    <div class="shortcut-item"><kbd>h</kbd> <span class="shortcut-desc">Toggle char-diff highlight</span></div>
+    <div class="shortcut-item"><kbd>s</kbd> <span class="shortcut-desc">Toggle secret masking</span></div>
+    <div class="shortcut-item"><kbd>c</kbd> <span class="shortcut-desc">Copy value to clipboard</span></div>
+    <div class="shortcut-item"><kbd>q</kbd> <span class="shortcut-desc">Quit</span></div>
+  </div>
+</section>
+
+<!-- ── Download ───────────────────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section" id="download">
+  <div class="section-label">Download</div>
+  <h2>Prebuilt binaries</h2>
+  <p class="section-sub">Standalone executables — no Bun or Node.js required.</p>
+
+  <div class="downloads-grid">
+    <a class="download-card" href="https://github.com/m-elbably/env-diff/releases/latest/download/env-diff-linux-x64" target="_blank" rel="noopener">
+      <span class="download-icon">🐧</span>
+      <span class="download-platform">Linux</span>
+      <span class="download-arch">x64 (amd64)</span>
+    </a>
+    <a class="download-card" href="https://github.com/m-elbably/env-diff/releases/latest/download/env-diff-linux-arm64" target="_blank" rel="noopener">
+      <span class="download-icon">🐧</span>
+      <span class="download-platform">Linux</span>
+      <span class="download-arch">arm64</span>
+    </a>
+    <a class="download-card" href="https://github.com/m-elbably/env-diff/releases/latest/download/env-diff-darwin-x64" target="_blank" rel="noopener">
+      <span class="download-icon">🍎</span>
+      <span class="download-platform">macOS</span>
+      <span class="download-arch">x64 (Intel)</span>
+    </a>
+    <a class="download-card" href="https://github.com/m-elbably/env-diff/releases/latest/download/env-diff-darwin-arm64" target="_blank" rel="noopener">
+      <span class="download-icon">🍎</span>
+      <span class="download-platform">macOS</span>
+      <span class="download-arch">arm64 (Apple Silicon)</span>
+    </a>
+    <a class="download-card" href="https://github.com/m-elbably/env-diff/releases/latest/download/env-diff-windows-x64.exe" target="_blank" rel="noopener">
+      <span class="download-icon">🪟</span>
+      <span class="download-platform">Windows</span>
+      <span class="download-arch">x64</span>
+    </a>
+    <a class="download-card" href="https://github.com/m-elbably/env-diff/releases" target="_blank" rel="noopener" style="border-style:dashed;justify-content:center;align-items:center;color:var(--muted)">
+      <span style="font-size:1.5rem">📦</span>
+      <span style="font-size:.875rem">All releases →</span>
+    </a>
+  </div>
+</section>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<hr class="divider" />
+<footer>
+  <p>
+    <strong style="color:var(--text);font-family:var(--font-mono)">env-diff</strong>
+    &nbsp;·&nbsp;
+    Built with <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a> &amp; <a href="https://github.com/nicholasgasior/opentui" target="_blank" rel="noopener">OpenTUI</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/m-elbably/env-diff" target="_blank" rel="noopener">GitHub</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/m-elbably/env-diff/releases" target="_blank" rel="noopener">Releases</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/m-elbably/env-diff/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+  </p>
+</footer>
+
+</body>
+</html>
