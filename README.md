@@ -2,8 +2,8 @@
 
 A fully **offline**, local TUI tool to visually diff `.env`, `.yaml`, and `.json` config files side-by-side — with color-coded diffs, inline character-level highlighting, and automatic secret masking.
 
-[![Node Version](https://img.shields.io/node/v/env-diff.svg)](https://nodejs.org)
-[![License](https://img.shields.io/github/license/m-elbably/env-diff.svg)](https://raw.githubusercontent.com/m-elbably/env-diff/master/LICENSE)
+[![Bun Version](https://img.shields.io/badge/bun-%3E%3D0.4.0-orange)](https://bun.sh)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ![Env Diff Screenshot](images/screenshot.jpg)
 
