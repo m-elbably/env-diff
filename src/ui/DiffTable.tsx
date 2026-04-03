@@ -14,8 +14,9 @@ const SECRET_PATTERN =
 
 // How many visible rows fit in the diff panel.
 // Title row (slick font ~6 rows, fills combined title+shortcuts row) + padding(2)
-// + file-pills(3) + bottom-border(1) + col-header(1) + status-bar(1+2padding) = 16
-const CONTENT_OVERHEAD = 16
+// + file-pills(3) + pills-paddingBottom(1) + bottom-border(1) + col-header(1)
+// + status-bar-border-top(1) + status-bar(1+2padding) = 18
+const CONTENT_OVERHEAD = 18
 
 type Props = {
   entries: DiffEntry[]
